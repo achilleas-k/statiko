@@ -175,9 +175,7 @@ func readPostMetadata(fname string) *postMetadata {
 	return pm
 }
 
-func renderPages(conf siteConfig) {
-	srcpath := conf.SourcePath
-
+func collectMarkdownFiles(srcpath string) []string {
 	var pagesmd []string
 	mdfinder := func(path string, _ os.FileInfo, err error) error {
 		if err != nil {
@@ -189,20 +187,27 @@ func renderPages(conf siteConfig) {
 		return nil
 	}
 	checkError(filepath.Walk(srcpath, mdfinder))
+	return pagesmd
+}
+
+func plural(n int) string {
+	if n != 1 {
+		return "s"
+	}
+	return ""
+}
+
+func renderPages(conf siteConfig) {
+	srcpath := conf.SourcePath
 
 	sitename := conf.SiteName
 	var data templateData
 
 	data.SiteName = template.HTML(sitename)
 
+	pagesmd := collectMarkdownFiles(srcpath)
 	npages := len(pagesmd)
 	pagelist := make([]string, npages)
-	plural := func(n int) string {
-		if n != 1 {
-			return "s"
-		}
-		return ""
-	}
 
 	nposts := 0
 	postlisting := make([]post, 0, npages)
