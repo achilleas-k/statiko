@@ -234,7 +234,8 @@ func renderPostsPage(posts []post, data templateData, renderer *html.Renderer, t
 		// TODO: create listing page as ast instead of manually rendering blocks
 		var bodystr string
 		for idx, p := range posts {
-			bodystr = fmt.Sprintf("%s%d. [%s](%s)\n    - %s\n", bodystr, idx, p.title, p.url, p.summary)
+			dateStr := p.metadata.DatePosted.Format("02 Jan 2006")
+			bodystr = fmt.Sprintf("%s%d. [%s](%s) (%s)\n    - %s\n", bodystr, idx, p.title, p.url, dateStr, p.summary)
 		}
 		doc := parseMD([]byte(bodystr))
 		data.Body = template.HTML(markdown.Render(doc, renderer))
