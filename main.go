@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -45,35 +44,47 @@ type templateData struct {
 	RelRoot string
 }
 
-func checkError(err error) {
-	if err != nil {
-		log.Fatal(err)
-	}
+func die(format string, a ...any) {
+	fmt.Fprintf(os.Stderr, format, a...)
+	os.Exit(1)
 }
 
 func copyFile(srcName, dstName string) error {
 	data, err := os.ReadFile(srcName)
-	checkError(err)
-	return os.WriteFile(dstName, data, 0666)
+	if err != nil {
+		return fmt.Errorf("reading file %q for copy: %w", srcName, err)
+	}
+	if err := os.WriteFile(dstName, data, 0666); err != nil {
+		return fmt.Errorf("writing file %q for copy: %w", dstName, err)
+	}
+	return nil
 }
 
-func readTemplate(templateFile string) string {
+func readTemplate(templateFile string) (string, error) {
 	thtml, err := os.ReadFile(templateFile)
-	checkError(err)
-	return string(thtml)
+	if err != nil {
+		return "", fmt.Errorf("reading template file %q: %w", templateFile, err)
+	}
+	return string(thtml), nil
 }
 
-func makeHTML(data templateData, templateFile string) []byte {
-	thtml := readTemplate(templateFile)
+func makeHTML(data templateData, templateFile string) ([]byte, error) {
+	thtml, err := readTemplate(templateFile)
+	if err != nil {
+		return nil, fmt.Errorf("making HTML: %w", err)
+	}
 	t, err := template.New("webpage").Parse(thtml)
-	checkError(err)
+	if err != nil {
+		return nil, fmt.Errorf("making HTML: %w", err)
+	}
 	rendered := new(bytes.Buffer)
-	err = t.Execute(rendered, data)
-	checkError(err)
-	return rendered.Bytes()
+	if err := t.Execute(rendered, data); err != nil {
+		return nil, fmt.Errorf("making HTML: %w", err)
+	}
+	return rendered.Bytes(), nil
 }
 
-func loadConfig() siteConfig {
+func loadConfig() (siteConfig, error) {
 	viper := viper.GetViper()
 	viper.SetConfigName("config")
 	viper.AddConfigPath(".")
@@ -83,24 +94,33 @@ func loadConfig() siteConfig {
 	viper.SetDefault("PageTemplateFile", "templates/template.html")
 	viper.SetDefault("ResourcePath", "res")
 	viper.SetDefault("PostPattern", `[0-9]{8}-.*`)
-	err := viper.ReadInConfig()
-	if err != nil && !strings.Contains(err.Error(), "Not Found") {
-		checkError(err)
+	if err := viper.ReadInConfig(); err != nil {
+		return siteConfig{}, fmt.Errorf("loading config: %w", err)
 	}
 	config := siteConfig{}
-	checkError(viper.UnmarshalExact(&config))
-	return config
+	if err := viper.UnmarshalExact(&config); err != nil {
+		return siteConfig{}, fmt.Errorf("loading config: %w", err)
+	}
+	return config, nil
 }
 
-func createDirs(conf siteConfig) {
+func createDirs(conf siteConfig) error {
 	destpath := conf.DestinationPath
-	checkError(os.MkdirAll(destpath, 0777))
+	if err := os.MkdirAll(destpath, 0777); err != nil {
+		return fmt.Errorf("creating destination path %q: %w", destpath, err)
+	}
 
 	imagepath := path.Join(destpath, "images")
-	checkError(os.MkdirAll(imagepath, 0777))
+	if err := os.MkdirAll(imagepath, 0777); err != nil {
+		return fmt.Errorf("creating image path %q: %w", imagepath, err)
+	}
 
 	respath := path.Join(destpath, "res")
-	checkError(os.MkdirAll(respath, 0777))
+	if err := os.MkdirAll(respath, 0777); err != nil {
+		return fmt.Errorf("creating resource path %q: %w", respath, err)
+	}
+
+	return nil
 }
 
 type postMetadata struct {
@@ -156,26 +176,33 @@ func parseMD(md []byte) ast.Node {
 	return mdparser.Parse(md)
 }
 
-func readPostMetadata(fname string) *postMetadata {
+func readPostMetadata(fname string) (*postMetadata, error) {
 	// metadata files are stored next to each post but with the .meta.json extension
 	fnameNoExt := strings.TrimSuffix(fname, filepath.Ext(fname))
 	metadataPath := fnameNoExt + ".meta.json"
 
 	if _, err := os.Stat(metadataPath); errors.Is(err, os.ErrNotExist) {
-		return nil
+		return nil, nil
 	}
 	fp, err := os.Open(metadataPath)
-	checkError(err)
-	defer func() { checkError(fp.Close()) }()
+	if err != nil {
+		return nil, fmt.Errorf("reading post metadata %q: %w", metadataPath, err)
+	}
+	defer func() {
+		if err := fp.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "closing file after reading post metadata: %v", err)
+		}
+	}()
 
 	decoder := json.NewDecoder(fp)
 	pm := &postMetadata{}
-	checkError(decoder.Decode(pm))
-	fmt.Printf("Decoded metadata: %+v\n", pm)
-	return pm
+	if err := decoder.Decode(pm); err != nil {
+		return nil, fmt.Errorf("reading post metadata %q: %w", metadataPath, err)
+	}
+	return pm, nil
 }
 
-func collectMarkdownFiles(srcpath string) []string {
+func collectMarkdownFiles(srcpath string) ([]string, error) {
 	var pagesmd []string
 	mdfinder := func(path string, _ os.FileInfo, err error) error {
 		if err != nil {
@@ -186,8 +213,10 @@ func collectMarkdownFiles(srcpath string) []string {
 		}
 		return nil
 	}
-	checkError(filepath.Walk(srcpath, mdfinder))
-	return pagesmd
+	if err := filepath.Walk(srcpath, mdfinder); err != nil {
+		return nil, fmt.Errorf("collecting markdown files in %q: %w", srcpath, err)
+	}
+	return pagesmd, nil
 }
 
 func plural(n int) string {
@@ -211,12 +240,18 @@ func renderPostsPage(posts []post, data templateData, renderer *html.Renderer, t
 		data.Body = template.HTML(markdown.Render(doc, renderer))
 		outpath := filepath.Join(destpath, "posts.html")
 		fmt.Printf("   Saving posts: %s\n", outpath)
-		return os.WriteFile(outpath, makeHTML(data, templateFile), 0666)
+		htmlData, err := makeHTML(data, templateFile)
+		if err != nil {
+			return fmt.Errorf("making html for posts page: %w", err)
+		}
+		if err := os.WriteFile(outpath, htmlData, 0666); err != nil {
+			return fmt.Errorf("writing posts page %q: %w", outpath, err)
+		}
 	}
 	return nil
 }
 
-func renderPages(conf siteConfig) {
+func renderPages(conf siteConfig) error {
 	srcpath := conf.SourcePath
 
 	sitename := conf.SiteName
@@ -224,7 +259,10 @@ func renderPages(conf siteConfig) {
 
 	data.SiteName = template.HTML(sitename)
 
-	pagesmd := collectMarkdownFiles(srcpath)
+	pagesmd, err := collectMarkdownFiles(srcpath)
+	if err != nil {
+		return fmt.Errorf("rendering pages: %w", err)
+	}
 	npages := len(pagesmd)
 	pagelist := make([]string, npages)
 
@@ -233,7 +271,9 @@ func renderPages(conf siteConfig) {
 	postrePattern := conf.PostPattern
 	fmt.Printf(":: Rendering %d page%s\n", npages, plural(npages))
 	postre, err := regexp.Compile(postrePattern)
-	checkError(err)
+	if err != nil {
+		return fmt.Errorf("rendering pages: %w", err)
+	}
 
 	htmlOpts := html.RendererOptions{}
 	renderer := html.NewRenderer(htmlOpts)
@@ -243,7 +283,9 @@ func renderPages(conf siteConfig) {
 	for idx, fname := range pagesmd {
 		fmt.Printf("   %d: %s", idx+1, fname)
 		pagemd, err := os.ReadFile(fname)
-		checkError(err)
+		if err != nil {
+			return fmt.Errorf("rendering pages: reading file %q: %w", fname, err)
+		}
 
 		// reverse render posts
 		// data.Body[nposts-idx-1] = template.HTML(string(safe))
@@ -260,18 +302,31 @@ func renderPages(conf siteConfig) {
 		// make potential parent directory
 		outpathpar, _ := filepath.Split(outpath)
 		if outpathpar != destpath {
-			checkError(os.MkdirAll(outpathpar, 0777))
+			if err := os.MkdirAll(outpathpar, 0777); err != nil {
+				return fmt.Errorf("rendering pages: creating path %q: %w", outpathpar, err)
+			}
 		}
 		data.RelRoot, _ = filepath.Rel(outpathpar, destpath)
 
-		checkError(os.WriteFile(outpath, makeHTML(data, templateFile), 0666))
+		htmlData, err := makeHTML(data, templateFile)
+		if err != nil {
+			return fmt.Errorf("rending pages: %w", err)
+		}
+
+		if err := os.WriteFile(outpath, htmlData, 0666); err != nil {
+			return fmt.Errorf("rendering pages: writing html file %q: %w", outpath, err)
+		}
 
 		if postre.MatchString(fname) {
 			p := parsePost(pagemd)
 			postURL := strings.TrimPrefix(outpath, destpath)
 			postURL = strings.TrimPrefix(postURL, "/") // make it relative
 			p.url = postURL
-			p.metadata = readPostMetadata(fname)
+			metadata, err := readPostMetadata(fname)
+			if err != nil {
+				return fmt.Errorf("rendering pages: %w", err)
+			}
+			p.metadata = metadata
 			posts = append(posts, p)
 		}
 
@@ -280,11 +335,12 @@ func renderPages(conf siteConfig) {
 	}
 	renderPostsPage(posts, data, renderer, templateFile, destpath)
 	fmt.Println(":: Rendering complete!")
+	return nil
 }
 
 // copyResources copies all files from the configured resource directory
 // to the "res" subdirectory under the destination path.
-func copyResources(conf siteConfig) {
+func copyResources(conf siteConfig) error {
 	fmt.Println(":: Copying resources")
 	dstroot := conf.DestinationPath
 	walker := func(srcloc string, info os.FileInfo, err error) error {
@@ -294,17 +350,24 @@ func copyResources(conf siteConfig) {
 		if info.Mode().IsRegular() {
 			dstloc := path.Join(dstroot, srcloc)
 			fmt.Printf("   %s -> %s\n", srcloc, dstloc)
-			checkError(copyFile(srcloc, dstloc))
+			if err := copyFile(srcloc, dstloc); err != nil {
+				return fmt.Errorf("copying resources: %w", err)
+			}
 		} else if info.Mode().IsDir() {
 			dstloc := path.Join(dstroot, srcloc)
 			fmt.Printf("   Creating directory %s\n", dstloc)
-			checkError(os.MkdirAll(dstloc, 0777))
+			if err := os.MkdirAll(dstloc, 0777); err != nil {
+				return fmt.Errorf("copying resources: creating path %q: %w", dstloc, err)
+			}
 		}
 		return nil
 	}
 
-	checkError(filepath.Walk(conf.ResourcePath, walker))
+	if err := filepath.Walk(conf.ResourcePath, walker); err != nil {
+		return err
+	}
 	fmt.Println("== Done ==")
+	return nil
 }
 
 func printversion() {
@@ -327,8 +390,18 @@ func main() {
 		printversion()
 		return
 	}
-	conf := loadConfig()
-	createDirs(conf)
-	renderPages(conf)
-	copyResources(conf)
+	conf, err := loadConfig()
+	if err != nil {
+		die("error: %v", err)
+	}
+	if err := createDirs(conf); err != nil {
+		die("error: %v", err)
+	}
+
+	if err := renderPages(conf); err != nil {
+		die("error: %v", err)
+	}
+	if err := copyResources(conf); err != nil {
+		die("error: %v", err)
+	}
 }
