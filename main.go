@@ -306,9 +306,9 @@ func printversion() {
 
 func init() {
 	if build == "" {
-		verstr = "meinstatic [dev build]"
+		verstr = "statiko [dev build]"
 	} else {
-		verstr = fmt.Sprintf("meinstatic Build %s (%s)", build, commit)
+		verstr = fmt.Sprintf("statiko Build %s (%s)", build, commit)
 	}
 }
 

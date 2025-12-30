@@ -1,4 +1,4 @@
-module github.com/achilleas-k/meinstatic
+module github.com/achilleas-k/statiko
 
 go 1.24.0
 

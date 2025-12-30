@@ -1,5 +1,5 @@
 # Binary
-BIN = meinstatic
+BIN = statiko
 
 # Build loc
 BUILDLOC = build
@@ -15,11 +15,11 @@ LDFLAGS = -ldflags="-X main.build=$(BUILDNUM) -X main.commit=$(COMMITHASH)"
 
 SOURCES = $(shell find . -type f -iname "*.go")
 
-.PHONY: meinstatic install clean uninstall
+.PHONY: statiko install clean uninstall
 
-meinstatic: $(BUILDLOC)/$(BIN)
+statiko: $(BUILDLOC)/$(BIN)
 
-install: meinstatic
+install: statiko
 	install $(BUILDLOC)/$(BIN) $(INSTLOC)/$(BIN)
 
 clean:

@@ -1,4 +1,4 @@
-# Meinstatic
+# Statiko
 
 Static website and blog generator.  Very simple.  Very incomplete.  Very inflexible.
 
