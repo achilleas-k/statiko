@@ -251,6 +251,21 @@ func renderPostsPage(posts []post, data templateData, renderer *html.Renderer, t
 	return nil
 }
 
+func addDate(doc ast.Node, p post) {
+	// add posted date to the end of the post
+	dateStr := p.metadata.DatePosted.Format(time.RFC1123)
+	footer := fmt.Sprintf("Posted: %s", dateStr)
+	hr := ast.HorizontalRule{}
+	dateParagraph := ast.Paragraph{}
+	ast.AppendChild(&dateParagraph, &ast.Text{
+		Leaf: ast.Leaf{
+			Literal: []byte(footer),
+		},
+	})
+	ast.AppendChild(doc, &hr)
+	ast.AppendChild(doc, &dateParagraph)
+}
+
 func renderPages(conf siteConfig) error {
 	srcpath := conf.SourcePath
 
@@ -306,6 +321,8 @@ func renderPages(conf siteConfig) error {
 			}
 			p.metadata = metadata
 			posts = append(posts, p)
+
+			addDate(doc, p)
 		}
 
 		// reverse render posts
