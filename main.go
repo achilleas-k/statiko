@@ -282,15 +282,6 @@ func renderPages(conf siteConfig) error {
 
 	for idx, fname := range pagesmd {
 		fmt.Printf("   %d: %s", idx+1, fname)
-		pagemd, err := os.ReadFile(fname)
-		if err != nil {
-			return fmt.Errorf("rendering pages: reading file %q: %w", fname, err)
-		}
-
-		// reverse render posts
-		// data.Body[nposts-idx-1] = template.HTML(string(safe))
-		doc := parseMD(pagemd)
-		data.Body = template.HTML(markdown.Render(doc, renderer))
 
 		// trim source path
 		outpath := strings.TrimPrefix(fname, srcpath)
@@ -298,6 +289,28 @@ func renderPages(conf siteConfig) error {
 		outpath = strings.TrimSuffix(outpath, filepath.Ext(outpath))
 		outpath = fmt.Sprintf("%s.html", outpath)
 		outpath = filepath.Join(destpath, outpath)
+		pagemd, err := os.ReadFile(fname)
+		if err != nil {
+			return fmt.Errorf("rendering pages: reading file %q: %w", fname, err)
+		}
+
+		doc := parseMD(pagemd)
+		if postre.MatchString(fname) {
+			p := parsePost(pagemd)
+			postURL := strings.TrimPrefix(outpath, destpath)
+			postURL = strings.TrimPrefix(postURL, "/") // make it relative
+			p.url = postURL
+			metadata, err := readPostMetadata(fname)
+			if err != nil {
+				return fmt.Errorf("rendering pages: %w", err)
+			}
+			p.metadata = metadata
+			posts = append(posts, p)
+		}
+
+		// reverse render posts
+		// data.Body[nposts-idx-1] = template.HTML(string(safe))
+		data.Body = template.HTML(markdown.Render(doc, renderer))
 
 		// make potential parent directory
 		outpathpar, _ := filepath.Split(outpath)
@@ -315,19 +328,6 @@ func renderPages(conf siteConfig) error {
 
 		if err := os.WriteFile(outpath, htmlData, 0666); err != nil {
 			return fmt.Errorf("rendering pages: writing html file %q: %w", outpath, err)
-		}
-
-		if postre.MatchString(fname) {
-			p := parsePost(pagemd)
-			postURL := strings.TrimPrefix(outpath, destpath)
-			postURL = strings.TrimPrefix(postURL, "/") // make it relative
-			p.url = postURL
-			metadata, err := readPostMetadata(fname)
-			if err != nil {
-				return fmt.Errorf("rendering pages: %w", err)
-			}
-			p.metadata = metadata
-			posts = append(posts, p)
 		}
 
 		fmt.Printf(" -> %s\n", outpath)
