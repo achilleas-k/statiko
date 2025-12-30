@@ -197,6 +197,25 @@ func plural(n int) string {
 	return ""
 }
 
+func renderPostsPage(posts []post, data templateData, renderer *html.Renderer, templateFile, destpath string) error {
+	fmt.Printf(":: Found %d posts\n", len(posts))
+
+	// render to listing page
+	if len(posts) > 0 {
+		// TODO: create listing page as ast instead of manually rendering blocks
+		var bodystr string
+		for idx, p := range posts {
+			bodystr = fmt.Sprintf("%s%d. [%s](%s)\n    - %s\n", bodystr, idx, p.title, p.url, p.summary)
+		}
+		doc := parseMD([]byte(bodystr))
+		data.Body = template.HTML(markdown.Render(doc, renderer))
+		outpath := filepath.Join(destpath, "posts.html")
+		fmt.Printf("   Saving posts: %s\n", outpath)
+		return os.WriteFile(outpath, makeHTML(data, templateFile), 0666)
+	}
+	return nil
+}
+
 func renderPages(conf siteConfig) {
 	srcpath := conf.SourcePath
 
@@ -209,9 +228,6 @@ func renderPages(conf siteConfig) {
 	npages := len(pagesmd)
 	pagelist := make([]string, npages)
 
-	nposts := 0
-	postlisting := make([]post, 0, npages)
-
 	destpath := conf.DestinationPath
 	templateFile := conf.PageTemplateFile
 	postrePattern := conf.PostPattern
@@ -221,6 +237,8 @@ func renderPages(conf siteConfig) {
 
 	htmlOpts := html.RendererOptions{}
 	renderer := html.NewRenderer(htmlOpts)
+
+	posts := make([]post, 0, npages)
 
 	for idx, fname := range pagesmd {
 		fmt.Printf("   %d: %s", idx+1, fname)
@@ -254,29 +272,13 @@ func renderPages(conf siteConfig) {
 			postURL = strings.TrimPrefix(postURL, "/") // make it relative
 			p.url = postURL
 			p.metadata = readPostMetadata(fname)
-			postlisting = append(postlisting, p)
-			nposts++
+			posts = append(posts, p)
 		}
 
 		fmt.Printf(" -> %s\n", outpath)
 		pagelist[idx] = outpath
 	}
-	fmt.Printf(":: Found %d posts\n", nposts)
-
-	// render to listing page
-	if nposts > 0 {
-		// TODO: create listing page as ast instead of manually rendering blocks
-		var bodystr string
-		for idx, p := range postlisting {
-			bodystr = fmt.Sprintf("%s%d. [%s](%s)\n    - %s\n", bodystr, idx, p.title, p.url, p.summary)
-		}
-		doc := parseMD([]byte(bodystr))
-		data.Body = template.HTML(markdown.Render(doc, renderer))
-		outpath := filepath.Join(destpath, "posts.html")
-		fmt.Printf("   Saving posts: %s\n", outpath)
-		err := os.WriteFile(outpath, makeHTML(data, templateFile), 0666)
-		checkError(err)
-	}
+	renderPostsPage(posts, data, renderer, templateFile, destpath)
 	fmt.Println(":: Rendering complete!")
 }
 
